@@ -1,22 +1,160 @@
-import streamlit as st
+import os
 import pandas as pd
+import streamlit as st
 import joblib
 
 st.set_page_config(page_title="HW1 - Big4 AI Auditing", layout="wide")
 
-# Load data
-df = pd.read_csv("data/big4_financial_risk_compliance.csv")
-results_df = pd.read_csv("models/model_results.csv")
+# =========================================================
+# Helper functions
+# =========================================================
 
-# Load models
-log_model = joblib.load("models/logistic_model.joblib")
-tree_model = joblib.load("models/decision_tree_model.joblib")
-rf_model = joblib.load("models/random_forest_model.joblib")
-xgb_model = joblib.load("models/xgb_model.joblib")
+def file_exists(path: str) -> bool:
+    return os.path.exists(path)
+
+def safe_read_csv(path: str, fallback_df: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    try:
+        if file_exists(path):
+            return pd.read_csv(path)
+        return fallback_df
+    except Exception as e:
+        st.warning(f"Could not read CSV file: {path}")
+        st.exception(e)
+        return fallback_df
+
+def safe_load_joblib(path: str):
+    try:
+        if file_exists(path):
+            return joblib.load(path)
+        return None
+    except Exception as e:
+        st.warning(f"Could not load model file: {path}")
+        st.exception(e)
+        return None
+
+def show_image_if_exists(path: str, caption: str):
+    if file_exists(path):
+        st.image(path, caption=caption, use_container_width=True)
+    else:
+        st.warning(f"Missing image file: {path}")
+
+def get_prediction_probability(model, input_df: pd.DataFrame):
+    """
+    Returns predicted class label and probability safely.
+    Works best for classifiers with predict_proba().
+    """
+    try:
+        if model is None:
+            return None, None, "The selected model is not available."
+
+        # Preferred path: predict_proba
+        if hasattr(model, "predict_proba"):
+            prob = float(model.predict_proba(input_df)[0, 1])
+            pred = "Yes" if prob >= 0.5 else "No"
+            return pred, prob, None
+
+        # Fallback: decision_function
+        if hasattr(model, "decision_function"):
+            score = float(model.decision_function(input_df)[0])
+            # crude sigmoid fallback for display only
+            import math
+            prob = 1 / (1 + math.exp(-score))
+            pred = "Yes" if prob >= 0.5 else "No"
+            return pred, prob, None
+
+        # Final fallback: predict only
+        pred_raw = model.predict(input_df)[0]
+        if str(pred_raw) in ["1", "Yes", "yes", "True", "true"]:
+            return "Yes", None, None
+        return "No", None, None
+
+    except Exception as e:
+        return None, None, f"Prediction failed: {e}"
+
+def safe_metric_table():
+    return pd.DataFrame({
+        "Model": ["Logistic Regression", "Decision Tree", "Random Forest", "XGBoost", "MLP"],
+        "Accuracy": [None] * 5,
+        "Precision": [None] * 5,
+        "Recall": [None] * 5,
+        "F1": [None] * 5,
+        "AUC_ROC": [None] * 5
+    })
+
+# =========================================================
+# Paths
+# =========================================================
+
+DATA_PATH = "data/big4_financial_risk_compliance.csv"
+RESULTS_PATH = "models/model_results.csv"
+
+LOG_MODEL_PATH = "models/logistic_model.joblib"
+TREE_MODEL_PATH = "models/decision_tree_model.joblib"
+RF_MODEL_PATH = "models/random_forest_model.joblib"
+XGB_MODEL_PATH = "models/xgb_model.joblib"
+
+IMG_TARGET = "outputs/target_distribution.png"
+IMG_VIZ1 = "outputs/viz_1.png"
+IMG_VIZ2 = "outputs/viz_2.png"
+IMG_VIZ3 = "outputs/viz_3.png"
+IMG_VIZ4 = "outputs/viz_4.png"
+IMG_HEATMAP = "outputs/correlation_heatmap.png"
+
+IMG_MODEL_COMPARE = "outputs/model_comparison.png"
+IMG_ROC_LOG = "outputs/roc_logistic.png"
+IMG_ROC_TREE = "outputs/roc_tree.png"
+IMG_ROC_RF = "outputs/roc_rf.png"
+IMG_ROC_XGB = "outputs/roc_xgb.png"
+IMG_MLP = "outputs/mlp_history.png"
+
+IMG_SHAP_SUMMARY = "outputs/shap_summary.png"
+IMG_SHAP_BAR = "outputs/shap_bar.png"
+IMG_SHAP_WATERFALL = "outputs/shap_waterfall.png"
+
+# =========================================================
+# Load data and assets safely
+# =========================================================
+
+df = safe_read_csv(DATA_PATH)
+
+if df is None:
+    st.error("The main dataset file is missing: data/big4_financial_risk_compliance.csv")
+    st.stop()
+
+results_df = safe_read_csv(RESULTS_PATH, fallback_df=safe_metric_table())
+if results_df is None:
+    results_df = safe_metric_table()
+
+log_model = safe_load_joblib(LOG_MODEL_PATH)
+tree_model = safe_load_joblib(TREE_MODEL_PATH)
+rf_model = safe_load_joblib(RF_MODEL_PATH)
+xgb_model = safe_load_joblib(XGB_MODEL_PATH)
 
 target = "AI_Used_for_Auditing"
 
+# =========================================================
+# Sidebar diagnostics
+# =========================================================
+
+with st.sidebar:
+    st.header("App Diagnostics")
+
+    st.write("**Dataset**")
+    st.write("Loaded" if df is not None else "Missing")
+
+    st.write("**Models**")
+    st.write(f"Logistic Regression: {'Loaded' if log_model is not None else 'Missing'}")
+    st.write(f"Decision Tree: {'Loaded' if tree_model is not None else 'Missing'}")
+    st.write(f"Random Forest: {'Loaded' if rf_model is not None else 'Missing'}")
+    st.write(f"XGBoost: {'Loaded' if xgb_model is not None else 'Missing'}")
+
+    st.write("**Results Table**")
+    st.write("Loaded" if file_exists(RESULTS_PATH) else "Fallback table in use")
+
+# =========================================================
 # Tabs
+# =========================================================
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "Executive Summary",
     "Descriptive Analytics",
@@ -24,98 +162,105 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "Explainability & Interactive Prediction"
 ])
 
-# -----------------------------
-# Tab 1: Executive Summary
-# -----------------------------
+# =========================================================
+# Tab 1
+# =========================================================
 with tab1:
     st.title("Executive Summary")
 
     st.write("""
     This project predicts whether AI was used for auditing in a Big Four financial risk and compliance dataset.
-    The dataset includes engagement-level operational, risk, fraud, workload, industry, and quality-related variables.
-    The target variable is `AI_Used_for_Auditing`, which indicates whether the case involved AI-enabled auditing.
+    The dataset contains engagement-level operational, risk, fraud, industry, workload, and audit quality variables.
+    The target variable is `AI_Used_for_Auditing`, which indicates whether AI-enabled auditing was used in the case.
     """)
 
     st.write("""
-    This prediction problem is meaningful because AI adoption in audit settings affects efficiency, staffing,
-    consistency, fraud detection, and audit transformation strategy. Understanding what conditions are associated
-    with AI-enabled auditing can help firms allocate technology resources more effectively.
+    This problem is meaningful because AI adoption in auditing affects efficiency, consistency, staffing strategy,
+    fraud detection capability, and digital transformation planning. Understanding what conditions are associated
+    with AI-enabled auditing can help firms allocate resources and technology more effectively.
     """)
 
     st.write("""
-    The workflow includes descriptive analytics, preprocessing, five predictive models, SHAP-based explainability,
-    and an interactive Streamlit deployment. The deployed app allows users to review results and generate new predictions.
+    The workflow includes descriptive analytics, preprocessing, multiple classification models, SHAP-based explainability,
+    and an interactive Streamlit deployment. The app is designed to summarize the entire HW1 pipeline in one place.
     """)
 
-# -----------------------------
-# Tab 2: Descriptive Analytics
-# -----------------------------
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head(), use_container_width=True)
+
+    st.subheader("Dataset Shape")
+    st.write(f"Rows: {df.shape[0]}")
+    st.write(f"Columns: {df.shape[1]}")
+
+# =========================================================
+# Tab 2
+# =========================================================
 with tab2:
     st.title("Descriptive Analytics")
 
-    st.image(
-        "outputs/target_distribution.png",
-        caption="The target distribution is relatively balanced, which supports stable classification modeling."
+    show_image_if_exists(
+        IMG_TARGET,
+        "The target distribution is relatively balanced, which supports stable classification modeling."
     )
 
-    st.image(
-        "outputs/viz_1.png",
-        caption="This figure compares audit effectiveness across AI and non-AI cases."
+    show_image_if_exists(
+        IMG_VIZ1,
+        "This figure compares audit effectiveness across AI and non-AI cases."
     )
 
-    st.image(
-        "outputs/viz_2.png",
-        caption="This figure shows how employee workload differs between AI and non-AI auditing cases."
+    show_image_if_exists(
+        IMG_VIZ2,
+        "This figure shows how employee workload differs between AI and non-AI auditing cases."
     )
 
-    st.image(
-        "outputs/viz_3.png",
-        caption="This chart compares AI adoption rates across industries."
+    show_image_if_exists(
+        IMG_VIZ3,
+        "This chart compares AI adoption rates across industries."
     )
 
-    st.image(
-        "outputs/viz_4.png",
-        caption="This plot shows the relationship between high-risk cases and fraud cases detected, colored by AI usage."
+    show_image_if_exists(
+        IMG_VIZ4,
+        "This plot shows the relationship between high-risk cases and fraud cases detected, colored by AI usage."
     )
 
-    st.image(
-        "outputs/correlation_heatmap.png",
-        caption="The heatmap summarizes linear relationships among numerical variables."
+    show_image_if_exists(
+        IMG_HEATMAP,
+        "The heatmap summarizes linear relationships among numerical variables."
     )
 
-# -----------------------------
-# Tab 3: Model Performance
-# -----------------------------
+# =========================================================
+# Tab 3
+# =========================================================
 with tab3:
     st.title("Model Performance")
 
     st.subheader("Model Comparison Table")
     st.dataframe(results_df, use_container_width=True)
 
-    st.image(
-        "outputs/model_comparison.png",
-        caption="This bar chart compares all models using F1 score."
+    show_image_if_exists(
+        IMG_MODEL_COMPARE,
+        "This bar chart compares all models using the selected primary metric."
     )
 
-    st.image("outputs/roc_logistic.png", caption="ROC curve for Logistic Regression.")
-    st.image("outputs/roc_tree.png", caption="ROC curve for Decision Tree.")
-    st.image("outputs/roc_rf.png", caption="ROC curve for Random Forest.")
-    st.image("outputs/roc_xgb.png", caption="ROC curve for XGBoost.")
-    st.image("outputs/mlp_history.png", caption="Training loss curve for the PyTorch MLP.")
+    show_image_if_exists(IMG_ROC_LOG, "ROC curve for Logistic Regression.")
+    show_image_if_exists(IMG_ROC_TREE, "ROC curve for Decision Tree.")
+    show_image_if_exists(IMG_ROC_RF, "ROC curve for Random Forest.")
+    show_image_if_exists(IMG_ROC_XGB, "ROC curve for XGBoost.")
+    show_image_if_exists(IMG_MLP, "Training loss curve for the PyTorch MLP.")
 
     st.subheader("Best Hyperparameters")
-    st.write("Please paste your final best hyperparameters here after training in Colab.")
+    st.info("If you want, replace this text with your final best hyperparameters from Colab.")
 
-# -----------------------------
-# Tab 4: Explainability & Interactive Prediction
-# -----------------------------
+# =========================================================
+# Tab 4
+# =========================================================
 with tab4:
     st.title("Explainability & Interactive Prediction")
 
     st.subheader("SHAP Explainability")
-    st.image("outputs/shap_summary.png", caption="SHAP summary plot.")
-    st.image("outputs/shap_bar.png", caption="SHAP bar plot.")
-    st.image("outputs/shap_waterfall.png", caption="SHAP waterfall plot for one sample prediction.")
+    show_image_if_exists(IMG_SHAP_SUMMARY, "SHAP summary plot.")
+    show_image_if_exists(IMG_SHAP_BAR, "SHAP bar plot.")
+    show_image_if_exists(IMG_SHAP_WATERFALL, "SHAP waterfall plot for one sample prediction.")
 
     st.subheader("Interactive Prediction")
 
@@ -124,41 +269,113 @@ with tab4:
         ["Logistic Regression", "Decision Tree", "Random Forest", "XGBoost"]
     )
 
-    selected_model = {
+    model_map = {
         "Logistic Regression": log_model,
         "Decision Tree": tree_model,
         "Random Forest": rf_model,
         "XGBoost": xgb_model
-    }[model_choice]
+    }
+    selected_model = model_map[model_choice]
 
-    year = st.slider("Year", int(df["Year"].min()), int(df["Year"].max()), int(df["Year"].median()))
-    total_eng = st.slider("Total Audit Engagements", int(df["Total_Audit_Engagements"].min()), int(df["Total_Audit_Engagements"].max()), int(df["Total_Audit_Engagements"].median()))
-    high_risk = st.slider("High Risk Cases", int(df["High_Risk_Cases"].min()), int(df["High_Risk_Cases"].max()), int(df["High_Risk_Cases"].median()))
-    violations = st.slider("Compliance Violations", int(df["Compliance_Violations"].min()), int(df["Compliance_Violations"].max()), int(df["Compliance_Violations"].median()))
-    fraud = st.slider("Fraud Cases Detected", int(df["Fraud_Cases_Detected"].min()), int(df["Fraud_Cases_Detected"].max()), int(df["Fraud_Cases_Detected"].median()))
-    revenue = st.slider("Total Revenue Impact", float(df["Total_Revenue_Impact"].min()), float(df["Total_Revenue_Impact"].max()), float(df["Total_Revenue_Impact"].median()))
-    workload = st.slider("Employee Workload", int(df["Employee_Workload"].min()), int(df["Employee_Workload"].max()), int(df["Employee_Workload"].median()))
-    effectiveness = st.slider("Audit Effectiveness Score", float(df["Audit_Effectiveness_Score"].min()), float(df["Audit_Effectiveness_Score"].max()), float(df["Audit_Effectiveness_Score"].median()))
-    satisfaction = st.slider("Client Satisfaction Score", float(df["Client_Satisfaction_Score"].min()), float(df["Client_Satisfaction_Score"].max()), float(df["Client_Satisfaction_Score"].median()))
-    firm = st.selectbox("Firm Name", sorted(df["Firm_Name"].unique()))
-    industry = st.selectbox("Industry Affected", sorted(df["Industry_Affected"].unique()))
+    # Build input widgets safely from the dataset
+    try:
+        year = st.slider(
+            "Year",
+            int(df["Year"].min()),
+            int(df["Year"].max()),
+            int(df["Year"].median())
+        )
 
-    input_df = pd.DataFrame([{
-        "Year": year,
-        "Firm_Name": firm,
-        "Total_Audit_Engagements": total_eng,
-        "High_Risk_Cases": high_risk,
-        "Compliance_Violations": violations,
-        "Fraud_Cases_Detected": fraud,
-        "Industry_Affected": industry,
-        "Total_Revenue_Impact": revenue,
-        "Employee_Workload": workload,
-        "Audit_Effectiveness_Score": effectiveness,
-        "Client_Satisfaction_Score": satisfaction
-    }])
+        total_eng = st.slider(
+            "Total Audit Engagements",
+            int(df["Total_Audit_Engagements"].min()),
+            int(df["Total_Audit_Engagements"].max()),
+            int(df["Total_Audit_Engagements"].median())
+        )
 
-    pred_prob = selected_model.predict_proba(input_df)[0, 1]
-    pred_class = "Yes" if pred_prob >= 0.5 else "No"
+        high_risk = st.slider(
+            "High Risk Cases",
+            int(df["High_Risk_Cases"].min()),
+            int(df["High_Risk_Cases"].max()),
+            int(df["High_Risk_Cases"].median())
+        )
 
-    st.write(f"### Predicted AI Usage: {pred_class}")
-    st.write(f"### Predicted Probability of AI Usage: {pred_prob:.3f}")
+        violations = st.slider(
+            "Compliance Violations",
+            int(df["Compliance_Violations"].min()),
+            int(df["Compliance_Violations"].max()),
+            int(df["Compliance_Violations"].median())
+        )
+
+        fraud = st.slider(
+            "Fraud Cases Detected",
+            int(df["Fraud_Cases_Detected"].min()),
+            int(df["Fraud_Cases_Detected"].max()),
+            int(df["Fraud_Cases_Detected"].median())
+        )
+
+        revenue = st.slider(
+            "Total Revenue Impact",
+            float(df["Total_Revenue_Impact"].min()),
+            float(df["Total_Revenue_Impact"].max()),
+            float(df["Total_Revenue_Impact"].median())
+        )
+
+        workload = st.slider(
+            "Employee Workload",
+            int(df["Employee_Workload"].min()),
+            int(df["Employee_Workload"].max()),
+            int(df["Employee_Workload"].median())
+        )
+
+        effectiveness = st.slider(
+            "Audit Effectiveness Score",
+            float(df["Audit_Effectiveness_Score"].min()),
+            float(df["Audit_Effectiveness_Score"].max()),
+            float(df["Audit_Effectiveness_Score"].median())
+        )
+
+        satisfaction = st.slider(
+            "Client Satisfaction Score",
+            float(df["Client_Satisfaction_Score"].min()),
+            float(df["Client_Satisfaction_Score"].max()),
+            float(df["Client_Satisfaction_Score"].median())
+        )
+
+        firm = st.selectbox("Firm Name", sorted(df["Firm_Name"].dropna().unique()))
+        industry = st.selectbox("Industry Affected", sorted(df["Industry_Affected"].dropna().unique()))
+
+        input_df = pd.DataFrame([{
+            "Year": year,
+            "Firm_Name": firm,
+            "Total_Audit_Engagements": total_eng,
+            "High_Risk_Cases": high_risk,
+            "Compliance_Violations": violations,
+            "Fraud_Cases_Detected": fraud,
+            "Industry_Affected": industry,
+            "Total_Revenue_Impact": revenue,
+            "Employee_Workload": workload,
+            "Audit_Effectiveness_Score": effectiveness,
+            "Client_Satisfaction_Score": satisfaction
+        }])
+
+        st.write("### Input Preview")
+        st.dataframe(input_df, use_container_width=True)
+
+        pred_class, pred_prob, pred_error = get_prediction_probability(selected_model, input_df)
+
+        if pred_error:
+            st.warning(pred_error)
+        else:
+            if pred_class is not None:
+                st.write(f"### Predicted AI Usage: {pred_class}")
+            if pred_prob is not None:
+                st.write(f"### Predicted Probability of AI Usage: {pred_prob:.3f}")
+            else:
+                st.info("This model returned a class prediction but not a probability.")
+
+    except KeyError as e:
+        st.error(f"A required column is missing from the dataset: {e}")
+    except Exception as e:
+        st.error("Interactive prediction failed.")
+        st.exception(e)
