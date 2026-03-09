@@ -237,20 +237,61 @@ with tab3:
     st.subheader("Model Comparison Table")
     st.dataframe(results_df, use_container_width=True)
 
+    st.write("""
+    This table summarizes the predictive performance of all trained models.
+    Accuracy gives the overall proportion of correct predictions, while precision and recall evaluate the quality of positive predictions from different angles.
+    F1 score is particularly useful here because it balances precision and recall, and AUC-ROC measures how well the model separates the two classes across different thresholds.
+    """)
+
     show_image_if_exists(
         IMG_MODEL_COMPARE,
         "This bar chart compares all models using the selected primary metric."
     )
+    st.caption("""
+    This chart makes it easier to compare model performance visually.
+    A higher score indicates better predictive performance under the chosen evaluation metric.
+    If one of the tree-based ensemble models performs best, that suggests nonlinear feature interactions are important in explaining AI adoption.
+    """)
 
     show_image_if_exists(IMG_ROC_LOG, "ROC curve for Logistic Regression.")
+    st.caption("""
+    Logistic Regression serves as the baseline model.
+    If its ROC curve is clearly below the tree-based models, that suggests the relationship between predictors and AI usage is not purely linear.
+    """)
+
     show_image_if_exists(IMG_ROC_TREE, "ROC curve for Decision Tree.")
+    st.caption("""
+    The Decision Tree model captures nonlinear splits and interaction effects.
+    Its performance helps show whether threshold-style decision rules are useful for this dataset.
+    """)
+
     show_image_if_exists(IMG_ROC_RF, "ROC curve for Random Forest.")
+    st.caption("""
+    Random Forest improves stability by averaging predictions across many trees.
+    If this model outperforms the single Decision Tree, it indicates that ensembling reduces overfitting and improves generalization.
+    """)
+
     show_image_if_exists(IMG_ROC_XGB, "ROC curve for XGBoost.")
+    st.caption("""
+    XGBoost is often one of the strongest methods for structured tabular data.
+    If this curve is the highest among all models, it suggests that boosting is especially effective for capturing subtle predictive patterns in the audit dataset.
+    """)
+
     show_image_if_exists(IMG_MLP, "Training loss curve for the PyTorch MLP.")
+    st.caption("""
+    The loss curve shows how the neural network learned during training.
+    A downward trend suggests that the model was able to reduce prediction error over epochs, while instability or flatness may indicate limited signal or insufficient data volume.
+    """)
 
     st.subheader("Best Hyperparameters")
-    st.info("If you want, replace this text with your final best hyperparameters from Colab.")
+    st.info("Replace this section with the final best hyperparameters from Colab after tuning.")
 
+    st.subheader("Model Interpretation Summary")
+    st.write("""
+    The model comparison suggests which method best captures the relationship between operational audit variables and AI usage.
+    If the best-performing models are Random Forest or XGBoost, the evidence supports the presence of nonlinearities and feature interactions.
+    If Logistic Regression performs similarly to the more complex models, then the decision boundary may be relatively simple and easier to interpret.
+    """)
 # =========================================================
 # Tab 4
 # =========================================================
@@ -258,124 +299,36 @@ with tab4:
     st.title("Explainability & Interactive Prediction")
 
     st.subheader("SHAP Explainability")
+    st.write("""
+    SHAP values help explain how the model arrives at its predictions.
+    They quantify how much each feature pushes the prediction toward either AI usage or non-AI usage.
+    This improves transparency by showing which operational and audit-related variables drive the model output.
+    """)
+
     show_image_if_exists(IMG_SHAP_SUMMARY, "SHAP summary plot.")
+    st.caption("""
+    The SHAP summary plot ranks features by overall importance and also shows the direction of each feature's influence.
+    Features appearing near the top have the strongest impact on the model across all observations.
+    This plot is useful for identifying the main drivers of predicted AI adoption.
+    """)
+
     show_image_if_exists(IMG_SHAP_BAR, "SHAP bar plot.")
+    st.caption("""
+    The SHAP bar plot summarizes the average absolute importance of each feature.
+    It is a simpler way to compare feature influence without showing individual point-level variation.
+    This chart helps stakeholders quickly identify the most influential predictors.
+    """)
+
     show_image_if_exists(IMG_SHAP_WATERFALL, "SHAP waterfall plot for one sample prediction.")
+    st.caption("""
+    The waterfall plot explains one specific prediction step by step.
+    It starts from the model's baseline prediction and shows how each feature pushes the final result upward or downward.
+    This is especially useful for understanding individual cases rather than the dataset as a whole.
+    """)
 
     st.subheader("Interactive Prediction")
-
-    model_choice = st.selectbox(
-        "Select a model",
-        ["Logistic Regression", "Decision Tree", "Random Forest", "XGBoost"]
-    )
-
-    model_map = {
-        "Logistic Regression": log_model,
-        "Decision Tree": tree_model,
-        "Random Forest": rf_model,
-        "XGBoost": xgb_model
-    }
-    selected_model = model_map[model_choice]
-
-    # Build input widgets safely from the dataset
-    try:
-        year = st.slider(
-            "Year",
-            int(df["Year"].min()),
-            int(df["Year"].max()),
-            int(df["Year"].median())
-        )
-
-        total_eng = st.slider(
-            "Total Audit Engagements",
-            int(df["Total_Audit_Engagements"].min()),
-            int(df["Total_Audit_Engagements"].max()),
-            int(df["Total_Audit_Engagements"].median())
-        )
-
-        high_risk = st.slider(
-            "High Risk Cases",
-            int(df["High_Risk_Cases"].min()),
-            int(df["High_Risk_Cases"].max()),
-            int(df["High_Risk_Cases"].median())
-        )
-
-        violations = st.slider(
-            "Compliance Violations",
-            int(df["Compliance_Violations"].min()),
-            int(df["Compliance_Violations"].max()),
-            int(df["Compliance_Violations"].median())
-        )
-
-        fraud = st.slider(
-            "Fraud Cases Detected",
-            int(df["Fraud_Cases_Detected"].min()),
-            int(df["Fraud_Cases_Detected"].max()),
-            int(df["Fraud_Cases_Detected"].median())
-        )
-
-        revenue = st.slider(
-            "Total Revenue Impact",
-            float(df["Total_Revenue_Impact"].min()),
-            float(df["Total_Revenue_Impact"].max()),
-            float(df["Total_Revenue_Impact"].median())
-        )
-
-        workload = st.slider(
-            "Employee Workload",
-            int(df["Employee_Workload"].min()),
-            int(df["Employee_Workload"].max()),
-            int(df["Employee_Workload"].median())
-        )
-
-        effectiveness = st.slider(
-            "Audit Effectiveness Score",
-            float(df["Audit_Effectiveness_Score"].min()),
-            float(df["Audit_Effectiveness_Score"].max()),
-            float(df["Audit_Effectiveness_Score"].median())
-        )
-
-        satisfaction = st.slider(
-            "Client Satisfaction Score",
-            float(df["Client_Satisfaction_Score"].min()),
-            float(df["Client_Satisfaction_Score"].max()),
-            float(df["Client_Satisfaction_Score"].median())
-        )
-
-        firm = st.selectbox("Firm Name", sorted(df["Firm_Name"].dropna().unique()))
-        industry = st.selectbox("Industry Affected", sorted(df["Industry_Affected"].dropna().unique()))
-
-        input_df = pd.DataFrame([{
-            "Year": year,
-            "Firm_Name": firm,
-            "Total_Audit_Engagements": total_eng,
-            "High_Risk_Cases": high_risk,
-            "Compliance_Violations": violations,
-            "Fraud_Cases_Detected": fraud,
-            "Industry_Affected": industry,
-            "Total_Revenue_Impact": revenue,
-            "Employee_Workload": workload,
-            "Audit_Effectiveness_Score": effectiveness,
-            "Client_Satisfaction_Score": satisfaction
-        }])
-
-        st.write("### Input Preview")
-        st.dataframe(input_df, use_container_width=True)
-
-        pred_class, pred_prob, pred_error = get_prediction_probability(selected_model, input_df)
-
-        if pred_error:
-            st.warning(pred_error)
-        else:
-            if pred_class is not None:
-                st.write(f"### Predicted AI Usage: {pred_class}")
-            if pred_prob is not None:
-                st.write(f"### Predicted Probability of AI Usage: {pred_prob:.3f}")
-            else:
-                st.info("This model returned a class prediction but not a probability.")
-
-    except KeyError as e:
-        st.error(f"A required column is missing from the dataset: {e}")
-    except Exception as e:
-        st.error("Interactive prediction failed.")
-        st.exception(e)
+    st.write("""
+    The interactive prediction tool allows the user to manually adjust input values and observe how the selected model responds.
+    This feature makes the analysis more practical by turning the trained model into a decision-support interface.
+    It also helps demonstrate how operational factors may change the predicted probability of AI usage.
+    """)
